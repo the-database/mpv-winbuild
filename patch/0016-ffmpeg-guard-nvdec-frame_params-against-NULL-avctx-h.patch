@@ -1,0 +1,98 @@
+From f015bf15caa8eea18373bde1bf0ec8c3231ba8c2 Mon Sep 17 00:00:00 2001
+From: the-database <25811902+the-database@users.noreply.github.com>
+Date: Wed, 15 Jul 2026 18:54:20 -0400
+Subject: [PATCH] ffmpeg: guard nvdec frame_params against NULL avctx->hwaccel
+
+FFmpeg master ca13ad0c28 (nvdec: opaque CUARRAY output) dereferences
+avctx->hwaccel in ff_nvdec_frame_params(). That function is reachable
+through the public avcodec_get_hw_frames_parameters() API -- the path
+mpv/libmpv takes from its get_format callback -- where avctx->hwaccel
+is not installed yet. Every --hwdec=nvdec playback crashes with an
+access violation (read at 0x10) in builds carrying FFmpeg master from
+2026-07-14 onward; hwdec=no and d3d11va are unaffected.
+
+Carry the one-line guard (default to AV_PIX_FMT_CUDA when no hwaccel
+is installed; CUARRAY is only selectable via the internal hwaccel
+negotiation) until it lands upstream, wired through a PATCH_COMMAND
+following the vulkan/curl package convention. Drop this patch once
+upstream FFmpeg guards the deref.
+---
+ ...odec-nvdec-do-not-deref-NULL-hwaccel.patch | 53 +++++++++++++++++++
+ packages/ffmpeg.cmake                         |  1 +
+ 2 files changed, 54 insertions(+)
+ create mode 100644 packages/ffmpeg-0001-avcodec-nvdec-do-not-deref-NULL-hwaccel.patch
+
+diff --git a/packages/ffmpeg-0001-avcodec-nvdec-do-not-deref-NULL-hwaccel.patch b/packages/ffmpeg-0001-avcodec-nvdec-do-not-deref-NULL-hwaccel.patch
+new file mode 100644
+index 0000000..52ca71f
+--- /dev/null
++++ b/packages/ffmpeg-0001-avcodec-nvdec-do-not-deref-NULL-hwaccel.patch
+@@ -0,0 +1,53 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: the-database <25811902+the-database@users.noreply.github.com>
++Date: Wed, 15 Jul 2026 19:30:00 -0400
++Subject: [PATCH] avcodec/nvdec: do not deref NULL hwaccel in
++ ff_nvdec_frame_params()
++
++Commit ca13ad0c28 ("avcodec/nvdec: add opaque CUARRAY output and
++zero-copy decode support") made ff_nvdec_frame_params() select the
++frames-context format from avctx->hwaccel->pix_fmt. That function is
++also reachable through the public avcodec_get_hw_frames_parameters()
++API -- typically from a get_format callback, as libmpv does -- where
++avctx->hwaccel is not installed yet (only the internal hwaccel init
++path sets it before calling frame_params). The result is a NULL deref
++(read at offset 0x10) and a crash for every API user that asks for
++CUDA/NVDEC frame parameters, e.g. mpv with --hwdec=nvdec on any
++nvdec-decodable stream.
++
++Guard the deref and keep the classic AV_PIX_FMT_CUDA default in the
++public-API case: opaque CUARRAY output is only selectable through the
++internal hwaccel negotiation, which does install avctx->hwaccel first.
++
++The other avctx->hwaccel uses in nvdec.c (nvdec_init_hwframes,
++nvdec_retrieve_data paths) run only at decode time where the hwaccel
++is guaranteed set, so they need no guard.
++---
++ libavcodec/nvdec.c | 11 ++++++++++-
++ 1 file changed, 10 insertions(+), 1 deletion(-)
++
++diff --git a/libavcodec/nvdec.c b/libavcodec/nvdec.c
++index 278061d572..70a1786b36 100644
++--- a/libavcodec/nvdec.c
+++++ b/libavcodec/nvdec.c
++@@ -1106,8 +1106,17 @@ int ff_nvdec_frame_params(AVCodecContext *avctx,
++     }
++     chroma_444 = supports_444 && cuvid_chroma_format == cudaVideoChromaFormat_444;
++
++-    frames_ctx->format            = (avctx->hwaccel->pix_fmt == AV_PIX_FMT_CUARRAY)
+++    /*
+++     * This function is reachable through the public
+++     * avcodec_get_hw_frames_parameters() API (e.g. from a get_format
+++     * callback, as libmpv does), where avctx->hwaccel is not installed
+++     * yet -- only the internal hwaccel init path sets it. Default to the
+++     * classic CUDA format there; opaque CUARRAY output is only selectable
+++     * through the internal hwaccel negotiation.
+++     */
+++    frames_ctx->format            = (avctx->hwaccel &&
+++                                     avctx->hwaccel->pix_fmt == AV_PIX_FMT_CUARRAY)
++                                     ? AV_PIX_FMT_CUARRAY : AV_PIX_FMT_CUDA;
++     // NVDEC target dimensions must be even-aligned for internal surface allocation.
++     // For chroma-subsampled formats (420/422), the output dimensions must also be
++     // even. For monochrome/444, keep the original output dimensions and only
++--
++2.43.0
+diff --git a/packages/ffmpeg.cmake b/packages/ffmpeg.cmake
+index 252c687..877f0be 100644
+--- a/packages/ffmpeg.cmake
++++ b/packages/ffmpeg.cmake
+@@ -51,6 +51,7 @@ ExternalProject_Add(ffmpeg
+     GIT_CLONE_FLAGS "--sparse --filter=tree:0"
+     GIT_CLONE_POST_COMMAND "sparse-checkout set --no-cone /* !tests/ref/fate"
+     UPDATE_COMMAND ""
++    PATCH_COMMAND ${EXEC} git am --3way ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg-*.patch
+     CONFIGURE_COMMAND ${EXEC} CONF=1 <SOURCE_DIR>/configure
+         --cross-prefix=${TARGET_ARCH}-
+         --prefix=${MINGW_INSTALL_PREFIX}
+-- 
+2.43.0
+
