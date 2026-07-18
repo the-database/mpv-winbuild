@@ -401,6 +401,12 @@ jobs:
           # mpv.cmake) and BEFORE the build, so commit as a normal change.
           sed -i 's|mpv-player/mpv\.git|the-database/mpv.git|g' packages/mpv.cmake
           sed -i 's|\(GIT_REPOSITORY https://github.com/the-database/mpv.git\)|\1\n    GIT_TAG ${{ needs.params.outputs.sha }}|' packages/mpv.cmake
+          # The Source Cache restore is not gated on needclean and mpv.cmake sets
+          # UPDATE_COMMAND "", so a cached mpv checkout would ignore the GIT_TAG
+          # above. Drop the mpv source + ExternalProject subtree so the pinned ref
+          # is always freshly cloned (keeps toolchain/dep/ccache warm).
+          rm -rf src_packages/mpv 2>/dev/null || true
+          find build${{ matrix.bit }} -maxdepth 3 -type d -name 'mpv-prefix' -exec rm -rf {} + 2>/dev/null || true
           git add packages/mpv.cmake && \
             git -c user.name=ci -c user.email=ci@local commit -m "redirect mpv source"
           # Use the-database/libass (carries the multithreaded rendering + deferred-blur
