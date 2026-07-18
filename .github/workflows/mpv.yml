@@ -9,6 +9,11 @@ permissions:
 on: 
   workflow_dispatch:
     inputs:
+      mpv_ref:
+        description: "the-database/mpv ref (branch/tag/sha) to build"
+        required: false
+        default: "master"
+        type: string
       build_target:
         description: "Build target"
         required: false
@@ -74,7 +79,7 @@ jobs:
             const commit = await github.rest.repos.getCommit({
               owner: 'the-database',
               repo: 'mpv',
-              ref: `master`
+              ref: `${{ inputs.mpv_ref }}`
             })
             core.setOutput('sha', String(commit.data.sha))
             
@@ -395,6 +400,7 @@ jobs:
           # patch). Must run AFTER zhongfly's patch series (they also touch
           # mpv.cmake) and BEFORE the build, so commit as a normal change.
           sed -i 's|mpv-player/mpv\.git|the-database/mpv.git|g' packages/mpv.cmake
+          sed -i 's|\(GIT_REPOSITORY https://github.com/the-database/mpv.git\)|\1\n    GIT_TAG ${{ needs.params.outputs.sha }}|' packages/mpv.cmake
           git add packages/mpv.cmake && \
             git -c user.name=ci -c user.email=ci@local commit -m "redirect mpv source"
           # Use the-database/libass (carries the multithreaded rendering + deferred-blur
