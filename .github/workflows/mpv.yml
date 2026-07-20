@@ -79,7 +79,7 @@ jobs:
             const commit = await github.rest.repos.getCommit({
               owner: 'the-database',
               repo: 'mpv',
-              ref: `${{ inputs.mpv_ref }}`
+              ref: `${{ inputs.mpv_ref || 'master' }}`
             })
             core.setOutput('sha', String(commit.data.sha))
             
