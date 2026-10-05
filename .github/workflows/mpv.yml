@@ -436,6 +436,19 @@ jobs:
           git add packages/libass.cmake && \
             git -c user.name=ci -c user.email=ci@local commit -m "redirect libass source"
           bash ../build.sh -t '${{ matrix.bit }}' -c '${{ inputs.compiler }}' -s "${{ matrix.lgpl == true && 'true' || 'false' }}"
+      - name: Print failing package logs
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          # The ExternalProject build/install logs only land in the logs
+          # artifact; surface their errors in the job log too, so a failure
+          # can be diagnosed without downloading the artifact.
+          for f in $(find mpv-winbuild-cmake/build${{ matrix.bit }} -type f \( -name '*-build-*.log' -o -name '*-install-*.log' \) -size +0 \
+                     -exec grep -lE '^FAILED|error:|Error [0-9]+' {} + 2>/dev/null); do
+            echo "::group::$f"
+            grep -nE -B3 -A20 '^FAILED|error:|Error [0-9]+' "$f" | head -200
+            echo "::endgroup::"
+          done || true
       - name: Collect logs
         if: ${{ always() }}
         run: |
