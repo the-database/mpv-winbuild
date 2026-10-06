@@ -442,6 +442,14 @@ jobs:
             git add packages && \
               git -c user.name=ci -c user.email=ci@local commit -m "add GNU download mirrors"
           fi
+          # libaribcaption 6c3b4f3 renamed its bundled MD5 to aribcc_md5_* but
+          # md5.c is still compiled out under HAVE_OPENSSL, leaving those
+          # symbols undefined. HAVE_OPENSSL gates nothing else, so drop it.
+          sed -i '/-DHAVE_OPENSSL=1/d' packages/libaribcaption.cmake
+          if ! git diff --quiet packages/libaribcaption.cmake; then
+            git add packages/libaribcaption.cmake && \
+              git -c user.name=ci -c user.email=ci@local commit -m "libaribcaption: use bundled MD5"
+          fi
           # Keep Vulkan presents ordered while render/compute queues rotate.
           cp ../libplacebo-present-queue.patch packages/libplacebo-present-queue.patch
           sed -i '/^    UPDATE_COMMAND ""$/a\    PATCH_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git apply --ignore-space-change ${CMAKE_CURRENT_LIST_DIR}/libplacebo-present-queue.patch' packages/libplacebo.cmake
