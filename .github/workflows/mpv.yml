@@ -435,6 +435,13 @@ jobs:
           find build${{ matrix.bit }} -maxdepth 3 -type d -name 'libass-prefix' -exec rm -rf {} + 2>/dev/null || true
           git add packages/libass.cmake && \
             git -c user.name=ci -c user.email=ci@local commit -m "redirect libass source"
+          # ftp.gnu.org is often unreachable from CI; fall back to GNU mirrors.
+          # URL_HASH still verifies whichever URL answers.
+          sed -i -E 's#^( *URL )https://ftp\.gnu\.org/(pub/)?gnu/([^ ]+)$#\1https://ftp.gnu.org/gnu/\3 https://mirrors.kernel.org/gnu/\3 https://ftpmirror.gnu.org/\3#' packages/*.cmake
+          if ! git diff --quiet packages; then
+            git add packages && \
+              git -c user.name=ci -c user.email=ci@local commit -m "add GNU download mirrors"
+          fi
           # Keep Vulkan presents ordered while render/compute queues rotate.
           cp ../libplacebo-present-queue.patch packages/libplacebo-present-queue.patch
           sed -i '/^    UPDATE_COMMAND ""$/a\    PATCH_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git apply --ignore-space-change ${CMAKE_CURRENT_LIST_DIR}/libplacebo-present-queue.patch' packages/libplacebo.cmake
