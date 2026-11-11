@@ -105,7 +105,9 @@ gh workflow run MPV -R the-database/mpv-winbuild \
   -f release=true
 ```
 
-All inputs, with defaults: `mpv_ref` (`master`), `libass_ref` (`master`), `build_target`
+All inputs, with defaults: `addon_metadata` (`true`: the addon build, the only Windows build
+AnimeJaNai ships; it needs `build_target=64bit`, `lgpl=false` and no `prs`, so untick it for
+any other target), `mpv_ref` (`master`), `libass_ref` (`master`), `build_target`
 (`64bit`; choices `32bit`/`64bit`/`64bit-v3`/`aarch64`/`all-64bit`/`all`), `lgpl` (`false`),
 `compiler` (`clang`; or `gcc`), `needclean` (`false`), `no_save_cache` (`false`), `release`
 (`true`), `command` (shell run before the build), `prs` (comma-separated mpv PR numbers),
@@ -122,7 +124,7 @@ take roughly 20–65 minutes for a single `64bit` clang target.
 | `build_mpv` | `ubuntu-latest`, container `ghcr.io/archlinux/archlinux:base-devel`, `continue-on-error: true` | the real build |
 | `publish_release` | `ubuntu-latest`, `if: inputs.release == true` | creates the GitHub release |
 | `cache`, `cache_llvm` | `ubuntu-latest` | keep the toolchain/LLVM caches warm |
-| `notify_downstream` | `ubuntu-latest` (`notify-downstream.yml`), after `publish_release` | asks mpv-AnimeJaNai for a bump PR |
+| `notify_downstream` | `ubuntu-latest` (`notify-downstream.yml`), after `publish_release`, addon runs only | asks mpv-AnimeJaNai for a bump PR for that release's tag |
 
 `build_mpv` installs its toolchain with pacman:
 
@@ -152,26 +154,28 @@ bash ../build.sh -t '<bit>' -c '<compiler>' -s '<lgpl>'
 ## Outputs, and what the assembler expects
 
 Release tag format (from the `publish_release` job):
-`$(date "+%Y-%m-%d")-$(head -c 10 <<< "$mpv_sha")` — e.g. `2026-07-23-7fc08d90c7`.
+`<yyyy-mm-dd>-<10-char mpv sha>-addons-<run id>` for addon runs (e.g.
+`2026-11-11-096b120ea3-addons-43101021549`), `<yyyy-mm-dd>-<10-char mpv sha>` otherwise.
 
-The assembler consumes exactly two of the assets, by interpolated filename
-(`BuildMpvUpscale2xAnimeJaNai/Program.cs:396` and `:432` in `the-database/mpv-AnimeJaNai`):
-
-| Asset | Used for |
-|---|---|
-| `mpv-dev-x86_64-<YYYYMMDD>-git-<hash>.7z` | `libmpv-2.dll` (overwrites mpv.net's) |
-| `mpv-x86_64-<YYYYMMDD>-git-<hash>.7z` | `mpv.exe`, `mpv.com` only |
-
-so **three** constants in that repo must be bumped together after a dispatch, and they are
-three different spellings of the same build. The fork's `notify_downstream` job (after
-`publish_release`, via `notify-downstream.yml`; needs the `JANAI_BUMP_TOKEN` secret) has
-mpv-AnimeJaNai open a PR that sets all three from the release's archive names:
+**Only addon releases feed AnimeJaNai.** An addon run's release is marked Latest, keeps its
+run-specific tag (never overwritten; `prunetags.sh` keeps every `-addons-` tag), and its
+`notify_downstream` job sends that tag to mpv-AnimeJaNai, whose bump PR sets four constants in
+`BuildMpvUpscale2xAnimeJaNai/Program.cs`:
 
 ```csharp
-const string MpvForkVersion   = "2026-07-23-7fc08d90c7"; // the release tag
-const string MpvForkBuildDate = "20260723";              // date in the archive filename
-const string MpvForkGitHash   = "7fc08d90c7";            // short hash in the archive filename
+const string MpvForkVersion   = "2026-11-11-096b120ea3-addons-43101021549"; // the release tag
+const string MpvForkBuildDate = "20261111";    // date in the archive filenames
+const string MpvForkGitHash   = "096b120ea3";  // short hash in the archive filenames
+const string MpvForkNativeMetadataSha256 = "…"; // SHA-256 of mpv-addon-native-x86_64.json
 ```
+
+The assembler downloads `mpv-addon-native-x86_64.json`, checks it against that SHA-256, and
+extracts the files it lists (which pin each binary's SHA-256) from
+`mpv-dev-x86_64-<YYYYMMDD>-git-<hash>.7z` and `mpv-x86_64-<YYYYMMDD>-git-<hash>.7z`:
+`libmpv-2.dll`, `mpv.exe`/`mpv.com`, `ajn-mvtools.dll` and the addon natives.
+
+Plain (non-addon) runs still publish a release when `release=true`, but it is not Latest and
+nothing downstream is notified; use them for other targets or LGPL builds.
 
 Other assets published but unused by AnimeJaNai: `mpv-debug-*.7z`, `ffmpeg-*.7z`, `sha256.txt`.
 
