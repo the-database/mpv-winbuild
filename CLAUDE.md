@@ -84,6 +84,10 @@ and the `<pkg>-prefix` subtree, a cached checkout silently ignores the pinned `G
 you get a stale build that looks successful. If a dispatch produces an unexpectedly old
 `libmpv-2.dll`, check these lines first.
 
+Ordinary (non-addon) builds drop the cached curl checkout the same way, for a different
+reason: curl's recipe patches with `git am` and the toolchain excludes curl from its `update`
+target, so a restored checkout still carries the patches and the patch step fails on it.
+
 Also appended: a last job, `notify_downstream`, after `publish_release` (see Outputs).
 
 
