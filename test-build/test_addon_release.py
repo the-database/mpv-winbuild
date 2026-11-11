@@ -48,7 +48,7 @@ class AddonReleaseTests(unittest.TestCase):
             values["inputs.release"] = True
             env[key] = original
 
-    def test_addon_tags_and_publish_settings_do_not_replace_normal_releases(self):
+    def test_addon_releases_are_latest_and_keep_plain_release_handling(self):
         script = textwrap.dedent(step("Get current time").split("script: |\n", 1)[1])
         release = step("Create release")
         expressions = {key: re.search(r"(?m)^          " + key + r": \$\{\{ (.*?) \}\}", release)[1]
@@ -59,19 +59,33 @@ class AddonReleaseTests(unittest.TestCase):
             values = {"inputs.addon_metadata": addon, "github.run_id": run_id,
                       "needs.params.outputs.sha": "a" * 40}
             code = "globalThis.Date = class extends Date { constructor() { super('2026-11-03T12:34:00Z'); } };\n"
-            code += "const output = {}; const core = {exportVariable(k,v) { output[k]=v; }};\n"
+            code += ("const output = {}; const stepOutput = {};\n"
+                     "const core = {exportVariable(k,v) { output[k]=v; }, setOutput(k,v) { stepOutput[k]=v; }};\n")
             code += render(script, values)
             code += "\nconst inputs = " + json.dumps({"addon_metadata": addon}) + "; const github = {sha:'workflow-source'};\n"
             for key, expression in expressions.items():
                 code += "output[" + json.dumps(key) + "] = (" + expression + ");\n"
-            result = node(code + "console.log(JSON.stringify(output));")
+            result = node(code + "console.log(JSON.stringify({...output, stepOutput}));")
             self.assertEqual(result.returncode, 0, result.stderr)
             actual = json.loads(result.stdout)
             expected_tag = "2026-11-03-aaaaaaaaaa" + (f"-addons-{run_id}" if addon else "")
             self.assertEqual(actual["tag_name"], expected_tag)
+            # publish_release exposes the same tag for notify_downstream.
+            self.assertEqual(actual["stepOutput"].get("tag_name"), expected_tag)
             self.assertEqual(actual["commit"], "workflow-source" if addon else "version")
-            for key in ("allowUpdates", "makeLatest", "Commit version & remove existing tag", "Prune old releases"):
+            # The addon build is the one AnimeJaNai ships, so it is Latest.
+            self.assertEqual(actual["makeLatest"], addon, "makeLatest")
+            # Plain releases keep their tag reuse, version branch and pruning.
+            for key in ("allowUpdates", "Commit version & remove existing tag", "Prune old releases"):
                 self.assertEqual(actual[key], not addon, key)
+
+    def test_only_addon_releases_notify_downstream_with_their_own_tag(self):
+        job = re.search(r"(?ms)^  notify_downstream:\n(.*?)(?=^  \S|\Z)", WORKFLOW)[1]
+        self.assertRegex(job, r"(?m)^    if: \$\{\{ inputs\.addon_metadata == true \}\}$")
+        self.assertRegex(job, r"(?m)^      tag: \$\{\{ needs\.publish_release\.outputs\.tag \}\}$")
+        publish = re.search(r"(?ms)^  publish_release:\n(.*?)(?=^  \S|\Z)", WORKFLOW)[1]
+        self.assertRegex(publish, r"(?m)^      tag: \$\{\{ steps\.time\.outputs\.tag_name \}\}$")
+        self.assertRegex(step("Get current time"), r"(?m)^        id: time$")
 
     def test_normal_pruning_retains_pinned_addon_releases(self):
         tags = [(date(2026, 11, 3) - timedelta(days=i)).isoformat() + "-aaaaaaaaaa" for i in range(45)]
