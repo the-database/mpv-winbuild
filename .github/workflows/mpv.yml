@@ -526,6 +526,15 @@ jobs:
           find build${{ matrix.bit }} -maxdepth 3 -type d -name 'libplacebo-prefix' -exec rm -rf {} + 2>/dev/null || true
           git add packages/libplacebo.cmake packages/libplacebo-present-queue.patch packages/libplacebo-nvidia-rtx-hdr.patch packages/libplacebo-nvidia-swapchain-recreate.patch && \
             git -c user.name=ci -c user.email=ci@local commit -m "apply AJN Vulkan presentation and display transition workarounds"
+          if [ '${{ inputs.addon_metadata }}' != 'true' ]; then
+            # curl's recipe patches with git am, and the toolchain leaves curl
+            # out of its update target, so a restored checkout is never reset
+            # and the patch step fails on the patches it already carries. Drop
+            # the source + ExternalProject subtree so curl is cloned and patched
+            # fresh. The addon recipe patches idempotently and keeps its checkout.
+            rm -rf src_packages/curl 2>/dev/null || true
+            find build${{ matrix.bit }} -maxdepth 3 -type d -name 'curl-prefix' -exec rm -rf {} + 2>/dev/null || true
+          fi
           build_script=../build.sh
           if [ '${{ inputs.addon_metadata }}' = 'true' ]; then build_script=../build-addons.sh; fi
           bash "$build_script" -t '${{ matrix.bit }}' -c '${{ inputs.compiler }}' -s "${{ matrix.lgpl == true && 'true' || 'false' }}"
