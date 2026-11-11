@@ -21,7 +21,7 @@ Branch: `main`.
 
 ## The fork's entire delta vs upstream
 
-`git diff --name-status upstream/main...main` touches the workflow, the two
+`git diff --name-status upstream/main...main` touches the workflow, the
 libplacebo patches it applies, and fork-only docs/tooling (`CLAUDE.md`, `test-build/`,
 `ajn-test-windows.yml`, `notify-downstream.yml`), and one fork-only patch:
 `patch/0003-curl-fix-build-with-pinned-openssl-snapshot.patch`. It is needed because
