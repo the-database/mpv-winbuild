@@ -24,6 +24,9 @@ def prepare(script, toolchain):
     COMMAND ${{CMAKE_COMMAND}} -E make_directory "{saved}/meson-info"
     COMMAND ${{CMAKE_COMMAND}} -E copy <BINARY_DIR>/config.h "{saved}/config.h"
     COMMAND ${{CMAKE_COMMAND}} -E copy <BINARY_DIR>/video/filter/mvtools/ajn-mvtools.dll "{saved}/ajn-mvtools.dll"
+    COMMAND ${{CMAKE_COMMAND}} -E make_directory "{saved}/licenses/mvtools"
+    COMMAND ${{CMAKE_COMMAND}} -E copy <SOURCE_DIR>/video/filter/mvtools/LICENSE "{saved}/licenses/mvtools/LICENSE"
+    COMMAND ${{CMAKE_COMMAND}} -E copy <SOURCE_DIR>/video/filter/mvtools/UPSTREAM.md "{saved}/licenses/mvtools/UPSTREAM.md"
     COMMAND ${{CMAKE_COMMAND}} -E copy <BINARY_DIR>/meson-info/intro-projectinfo.json "{saved}/meson-info/intro-projectinfo.json"
     COMMAND ${{CMAKE_COMMAND}} -E copy <BINARY_DIR>/meson-info/intro-buildoptions.json "{saved}/meson-info/intro-buildoptions.json"
     COMMENT "Preserving native addon build configuration before cleanup"
@@ -33,6 +36,10 @@ cleanup(mpv save-addon-configuration)'''
     package.write_text(cmake.replace(cleanup, capture))
     hook = '''    for dir in "$buildroot/build$bit"/mpv-dev-* "$buildroot/build$bit"/mpv-x86_64-*; do
         cp "$buildroot/build$bit/ajn-addon-configuration/ajn-mvtools.dll" "$dir/" || exit 1
+        # The detector is GPL MVTools code; ship its licence and provenance
+        # beside it, as the ordinary package does (prepare-rife-build.py).
+        mkdir -p "$dir/licenses" || exit 1
+        cp -r "$buildroot/build$bit/ajn-addon-configuration/licenses/mvtools" "$dir/licenses/" || exit 1
     done
     python "$AJN_METADATA_TOOL" --source "$srcdir/mpv" --libass-source "$srcdir/libass" \\
         --build "$buildroot/build$bit/ajn-addon-configuration" --binaries "$buildroot/build$bit"/mpv-* \\

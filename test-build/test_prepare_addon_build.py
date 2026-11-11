@@ -35,6 +35,8 @@ class PreparationTests(unittest.TestCase):
         (fixture / "meson-info").mkdir(parents=True)
         (fixture / "video/filter/mvtools").mkdir(parents=True)
         (fixture / "video/filter/mvtools/ajn-mvtools.dll").write_bytes(b"detector fixture")
+        (fixture / "video/filter/mvtools/LICENSE").write_text("licence fixture")
+        (fixture / "video/filter/mvtools/UPSTREAM.md").write_text("provenance fixture")
         (fixture / "config.h").write_text("#define HAVE_D3D11 1\n")
         (fixture / "meson-info/intro-projectinfo.json").write_text(json.dumps({"descriptive_name": "mpv"}))
         (fixture / "meson-info/intro-buildoptions.json").write_text(json.dumps([{"name": "libmpv", "value": True}]))
@@ -69,9 +71,16 @@ cleanup(mpv copy-package-dir)
         saved = build / "ajn-addon-configuration"
         for file in fixture.rglob("*"):
             if file.is_file():
-                name = file.name if file.suffix == ".dll" else file.relative_to(fixture)
+                if file.suffix == ".dll":
+                    name = file.name
+                elif file.parent.name == "mvtools":
+                    name = "licenses/mvtools/" + file.name
+                else:
+                    name = file.relative_to(fixture)
                 self.assertEqual((saved / name).read_bytes(), file.read_bytes())
         self.assertIn("-Dajn-mvtools=true", self.package.read_text())
+        self.assertIn('cp -r "$buildroot/build$bit/ajn-addon-configuration/licenses/mvtools" "$dir/licenses/"',
+                      self.script.with_name("build-addons.sh").read_text())
         self.assertIn('--build "$buildroot/build$bit/ajn-addon-configuration"', self.script.with_name("build-addons.sh").read_text())
         self.assertIn('ninja -C $buildroot/build$bit mpv || exit 1', self.script.with_name("build-addons.sh").read_text())
 
