@@ -39,6 +39,15 @@ def prepare(toolchain, script):
     recipe.write_text(text.replace("GIT_TAG main", "GIT_TAG " + FONTCONFIG_REVISION))
     for name in ("fontconfig-0001-Custom-changes-for-mpv-builds.patch", "fontconfig-0002-Do-not-use-dirent.h.patch"):
         shutil.copyfile(Path(__file__).with_name(name), toolchain / "packages" / name)
+    # ffmpeg main no longer has an OpenGL output device, so configure rejects
+    # --enable-opengl. shinchiro aab7204252 dropped it from the master recipe
+    # the ordinary build uses; the pinned recipe still passes it.
+    recipe = toolchain / "packages/ffmpeg.cmake"
+    text = recipe.read_text()
+    opengl = "        --enable-opengl\n"
+    if text.count(opengl) != 1:
+        raise RuntimeError("ffmpeg recipe changed; review addon dependency preparation")
+    recipe.write_text(text.replace(opengl, ""))
 
 
 if __name__ == "__main__":
