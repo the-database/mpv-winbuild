@@ -20,9 +20,9 @@ on:
         default: "the-database/libass"
         type: string
       addon_metadata:
-        description: "Produce addon capability evidence (64bit GPL builds only)"
+        description: "Addon build: the Windows build AnimeJaNai ships (64bit GPL only). Published as Latest and pinned downstream"
         required: false
-        default: false
+        default: true
         type: boolean
       mpv_ref:
         description: "the-database/mpv ref (branch/tag/sha) to build"
@@ -795,6 +795,8 @@ jobs:
     needs: [build_mpv,params]
     if: ${{ inputs.release == true }}
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.time.outputs.tag_name }}
     permissions:
       id-token: write
       attestations: write
@@ -822,6 +824,7 @@ jobs:
             }
 
       - name: Get current time
+        id: time
         uses: actions/github-script@v9
         with:
           script: |
@@ -832,6 +835,7 @@ jobs:
             core.exportVariable('long_time', now.slice(0, 16).replace('T', ' '));
             core.exportVariable('short_time', date);
             core.exportVariable('tag_name', date + '-' + sha.slice(0, 10) + suffix);
+            core.setOutput('tag_name', date + '-' + sha.slice(0, 10) + suffix);
 
       - name: Commit version & remove existing tag
         if: ${{ inputs.addon_metadata != true }}
@@ -920,7 +924,8 @@ jobs:
           allowUpdates: ${{ inputs.addon_metadata != true }}
           artifactErrorsFailBuild: true
           prerelease: false
-          makeLatest: ${{ inputs.addon_metadata != true }}
+          # The addon build is the one AnimeJaNai ships on Windows, so it is Latest.
+          makeLatest: ${{ inputs.addon_metadata == true }}
       - name: Attest
         uses: actions/attest@v4
         continue-on-error: true
@@ -1013,5 +1018,9 @@ jobs:
   notify_downstream:
     name: Notify downstream
     needs: publish_release
+    # Only the addon build is pinned downstream; plain builds are not Latest either.
+    if: ${{ inputs.addon_metadata == true }}
     uses: ./.github/workflows/notify-downstream.yml
+    with:
+      tag: ${{ needs.publish_release.outputs.tag }}
     secrets: inherit
